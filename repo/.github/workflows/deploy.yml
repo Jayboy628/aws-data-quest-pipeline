@@ -40,12 +40,12 @@ jobs:
           ls infra || echo "infra directory not found"
 
       - name: Make deploy script executable
-        run: chmod +x infra/deploy_pipeline.sh
+        run: chmod +x repo/infra/deploy_pipeline.sh
 
       - name: Deploy CloudFormation stacks
         env:
           AWS_REGION: ${{ env.AWS_REGION }}
           USE_PROFILE: "false"
         run: |
-          ./infra/deploy_pipeline.sh dev
+          ./repo/infra/deploy_pipeline.sh dev
 
