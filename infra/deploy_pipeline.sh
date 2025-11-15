@@ -53,13 +53,16 @@ aws cloudformation deploy \
   --parameter-overrides Env="$ENV" \
   --capabilities CAPABILITY_NAMED_IAM
 
-# 5. Lambda (update CodeBucket / keys before running!)
+# 5. Lambda
 aws cloudformation deploy \
   "${PROFILE_ARG[@]}" \
   --region "$REGION" \
   --stack-name "${STACK_PREFIX}-lambda" \
   --template-file infra/05_lambda.yml \
-  --parameter-overrides Env="$ENV" CodeBucket="your-code-bucket" BlsLambdaKey="dq-bls-sync.zip" PopLambdaKey="dq-population-api.zip" \
+  --parameter-overrides Env="$ENV" \
+                    CodeBucket="dq-code-657082399901-dev" \
+                    BlsLambdaKey="dq-bls-sync.zip" \
+                    PopLambdaKey="dq-population-api.zip" \
   --capabilities CAPABILITY_NAMED_IAM
 
 # 6. Glue job
@@ -68,8 +71,10 @@ aws cloudformation deploy \
   --region "$REGION" \
   --stack-name "${STACK_PREFIX}-glue" \
   --template-file infra/06_glue.yml \
-  --parameter-overrides Env="$ENV" GlueJobScriptLocation="s3://your-code-bucket/glue_job.py" \
+  --parameter-overrides Env="$ENV" \
+                    GlueJobScriptLocation="s3://dq-code-657082399901-dev/glue_job.py" \
   --capabilities CAPABILITY_NAMED_IAM
+
 
 # 7. Step Functions
 aws cloudformation deploy \
