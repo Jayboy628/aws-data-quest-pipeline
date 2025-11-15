@@ -30,6 +30,15 @@ jobs:
       - name: Show AWS identity (debug)
         run: aws sts get-caller-identity
 
+      - name: List repo files (debug)
+        run: |
+          echo "PWD:"
+          pwd
+          echo "Top-level:"
+          ls
+          echo "Infra dir (if exists):"
+          ls infra || echo "infra directory not found"
+
       - name: Make deploy script executable
         run: chmod +x infra/deploy_pipeline.sh
 
