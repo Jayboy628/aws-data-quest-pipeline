@@ -14,9 +14,6 @@ jobs:
       id-token: write
       contents: read
 
-    env:
-      AWS_REGION: us-east-1   # or move to secrets if you prefer
-
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
@@ -25,8 +22,7 @@ jobs:
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
-          aws-region: ${{ env.AWS_REGION }}
-          output-env-credentials: true
+          aws-region: us-east-1
 
       - name: Show AWS identity (debug)
         run: aws sts get-caller-identity
@@ -36,7 +32,7 @@ jobs:
 
       - name: Deploy CloudFormation stacks
         env:
-          AWS_REGION: ${{ env.AWS_REGION }}
+          AWS_REGION: us-east-1
           USE_PROFILE: "false"
         run: |
           ./infra/deploy_pipeline.sh dev
