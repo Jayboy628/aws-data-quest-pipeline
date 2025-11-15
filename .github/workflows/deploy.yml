@@ -33,17 +33,15 @@ jobs:
           pwd
           echo "Top-level:"
           ls
-          echo "Contents of repo/:"
-          ls repo
-          echo "Contents of repo/infra (if exists):"
-          ls repo/infra || echo "repo/infra directory not found"
+          echo "Infra dir (if exists):"
+          ls infra || echo "infra directory not found"
 
       - name: Make deploy script executable
-        run: chmod +x repo/infra/deploy_pipeline.sh
+        run: chmod +x infra/deploy_pipeline.sh
 
       - name: Deploy CloudFormation stacks
         env:
           AWS_REGION: ${{ secrets.AWS_REGION }}
           USE_PROFILE: "false"
         run: |
-          repo/infra/deploy_pipeline.sh dev
+          ./infra/deploy_pipeline.sh dev
