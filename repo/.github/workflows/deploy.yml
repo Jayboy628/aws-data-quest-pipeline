@@ -39,3 +39,4 @@ jobs:
           USE_PROFILE: "false"
         run: |
           ./infra/deploy_pipeline.sh dev
+
