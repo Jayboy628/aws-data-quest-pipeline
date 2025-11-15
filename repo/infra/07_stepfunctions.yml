@@ -1,0 +1,63 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Data Quest - Step Functions state machine
+
+Parameters:
+  Env:
+    Type: String
+    Default: dev
+
+Resources:
+  DQStateMachine:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      StateMachineName: !Sub dq-pipeline-${Env}
+      RoleArn: !ImportValue
+        Fn::Sub: dq-stepfunctions-role-arn-${Env}
+      DefinitionString:
+        Fn::Sub: |
+          {
+            "Comment": "Data Quest daily pipeline",
+            "StartAt": "BlsSync",
+            "States": {
+              "BlsSync": {
+                "Type": "Task",
+                "Resource": "${dq-bls-sync-lambda-arn-${Env}}",
+                "Retry": [
+                  {
+                    "ErrorEquals": ["States.ALL"],
+                    "IntervalSeconds": 10,
+                    "MaxAttempts": 3,
+                    "BackoffRate": 2.0
+                  }
+                ],
+                "Next": "PopulationApi"
+              },
+              "PopulationApi": {
+                "Type": "Task",
+                "Resource": "${dq-population-lambda-arn-${Env}}",
+                "Retry": [
+                  {
+                    "ErrorEquals": ["States.ALL"],
+                    "IntervalSeconds": 10,
+                    "MaxAttempts": 3,
+                    "BackoffRate": 2.0
+                  }
+                ],
+                "Next": "AnalyticsGlue"
+              },
+              "AnalyticsGlue": {
+                "Type": "Task",
+                "Resource": "arn:aws:states:::glue:startJobRun.sync",
+                "Parameters": {
+                  "JobName": "${dq-analytics-glue-job-name-${Env}}"
+                },
+                "End": true
+              }
+            }
+          }
+
+Outputs:
+  StateMachineArn:
+    Value: !Ref DQStateMachine
+    Export:
+      Name: !Sub dq-state-machine-arn-${Env}

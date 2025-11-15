@@ -1,0 +1,43 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Data Quest - S3 buckets (landing, processed, analytics)
+
+Parameters:
+  Env:
+    Type: String
+    Default: dev
+
+Resources:
+  LandingBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub dq-landing-${AWS::AccountId}-${Env}
+      VersioningConfiguration:
+        Status: Enabled
+
+  ProcessedBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub dq-processed-${AWS::AccountId}-${Env}
+      VersioningConfiguration:
+        Status: Enabled
+
+  AnalyticsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub dq-analytics-${AWS::AccountId}-${Env}
+      VersioningConfiguration:
+        Status: Enabled
+
+Outputs:
+  LandingBucketName:
+    Value: !Ref LandingBucket
+    Export:
+      Name: !Sub dq-landing-bucket-${Env}
+  ProcessedBucketName:
+    Value: !Ref ProcessedBucket
+    Export:
+      Name: !Sub dq-processed-bucket-${Env}
+  AnalyticsBucketName:
+    Value: !Ref AnalyticsBucket
+    Export:
+      Name: !Sub dq-analytics-bucket-${Env}

@@ -1,0 +1,38 @@
+name: Deploy Data Quest Infra
+
+on:
+  push:
+    branches:
+      - main   # or 'master' or 'dev', your choice
+  workflow_dispatch: {}
+
+jobs:
+  deploy-infra:
+    runs-on: ubuntu-latest
+
+    permissions:
+      id-token: write        # required for OIDC
+      contents: read
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Show AWS identity (debug)
+        run: aws sts get-caller-identity
+
+      - name: Make deploy script executable
+        run: chmod +x infra/deploy_pipeline.sh
+
+      - name: Deploy CloudFormation stacks
+        env:
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+          USE_PROFILE: "false"          # VERY important for CI
+        run: |
+          ./infra/deploy_pipeline.sh dev

@@ -1,0 +1,36 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Data Quest - Glue analytics job
+
+Parameters:
+  Env:
+    Type: String
+    Default: dev
+  GlueJobScriptLocation:
+    Type: String
+    Description: s3://bucket/path/to/glue_job.py
+
+Resources:
+  AnalyticsGlueJob:
+    Type: AWS::Glue::Job
+    Properties:
+      Name: !Sub dq-analytics-job-${Env}
+      Role: !ImportValue
+        Fn::Sub: dq-glue-role-arn-${Env}
+      Command:
+        Name: glueetl
+        ScriptLocation: !Ref GlueJobScriptLocation
+        PythonVersion: "3"
+      DefaultArguments:
+        "--ENV": !Ref Env
+        "--LANDING_BUCKET": !Sub dq-landing-${AWS::AccountId}-${Env}
+        "--PROCESSED_BUCKET": !Sub dq-processed-${AWS::AccountId}-${Env}
+        "--ANALYTICS_BUCKET": !Sub dq-analytics-${AWS::AccountId}-${Env}
+      GlueVersion: "4.0"
+      NumberOfWorkers: 2
+      WorkerType: G.1X
+
+Outputs:
+  AnalyticsGlueJobName:
+    Value: !Ref AnalyticsGlueJob
+    Export:
+      Name: !Sub dq-analytics-glue-job-name-${Env}

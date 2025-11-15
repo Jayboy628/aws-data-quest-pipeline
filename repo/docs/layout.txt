@@ -1,0 +1,31 @@
+repo/
+├─ infra/
+│ ├─ 01_iam.yml
+│ ├─ 02_s3.yml
+│ ├─ 03_secrets.yml
+│ ├─ 04_dynamodb.yml
+│ ├─ 05_lambda.yml
+│ ├─ 06_stepfunctions.yml
+│ ├─ 07_glue.yml
+│ └─ 08_eventbridge.yml
+├─ src/
+│ ├─ ingestion/
+│ │ ├─ bls_sync_lambda/
+│ │ │ ├─ handler.py
+│ │ │ └─ utils.py
+│ │ └─ population_api_lambda/
+│ │ ├─ handler.py
+│ │ └─ utils.py
+│ ├─ analytics/
+│ │ ├─ glue_job.py (PySpark or Pandas)
+│ │ └─ notebook.ipynb (optional)
+│ └─ common/
+│ ├─ manifest.py (DynamoDB helpers)
+│ └─ s3io.py (atomic writes, hashing)
+├─ tests/
+│ ├─ unit/
+│ └─ integration/
+├─ README.md
+└─ docs/
+├─ design.md (this document)
+└─ runbook.md

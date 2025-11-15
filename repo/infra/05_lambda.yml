@@ -1,0 +1,68 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Data Quest - Lambda functions (BLS sync, Population API)
+
+Parameters:
+  Env:
+    Type: String
+    Default: dev
+  CodeBucket:
+    Type: String
+    Description: S3 bucket where lambda code zips are stored
+  BlsLambdaKey:
+    Type: String
+    Default: dq-bls-sync.zip
+  PopLambdaKey:
+    Type: String
+    Default: dq-population-api.zip
+
+Resources:
+  BlsSyncLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub dq-bls-sync-${Env}
+      Handler: handler.lambda_handler
+      Runtime: python3.12
+      Role: !ImportValue
+        Fn::Sub: dq-lambda-role-arn-${Env}
+      Code:
+        S3Bucket: !Ref CodeBucket
+        S3Key: !Ref BlsLambdaKey
+      Timeout: 600
+      MemorySize: 512
+      Environment:
+        Variables:
+          ENV: !Ref Env
+          LANDING_BUCKET: !Sub dq-landing-${AWS::AccountId}-${Env}
+          MANIFEST_TABLE: !Sub dq_manifest_${Env}
+          CONFIG_SECRET_ARN: !ImportValue
+            Fn::Sub: dq-config-secret-arn-${Env}
+
+  PopulationLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub dq-population-api-${Env}
+      Handler: handler.lambda_handler
+      Runtime: python3.12
+      Role: !ImportValue
+        Fn::Sub: dq-lambda-role-arn-${Env}
+      Code:
+        S3Bucket: !Ref CodeBucket
+        S3Key: !Ref PopLambdaKey
+      Timeout: 300
+      MemorySize: 512
+      Environment:
+        Variables:
+          ENV: !Ref Env
+          LANDING_BUCKET: !Sub dq-landing-${AWS::AccountId}-${Env}
+          CONFIG_SECRET_ARN: !ImportValue
+            Fn::Sub: dq-config-secret-arn-${Env}
+
+Outputs:
+  BlsSyncLambdaArn:
+    Value: !GetAtt BlsSyncLambda.Arn
+    Export:
+      Name: !Sub dq-bls-sync-lambda-arn-${Env}
+  PopulationLambdaArn:
+    Value: !GetAtt PopulationLambda.Arn
+    Export:
+      Name: !Sub dq-population-lambda-arn-${Env}

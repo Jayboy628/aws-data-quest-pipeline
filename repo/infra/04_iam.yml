@@ -1,0 +1,120 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Data Quest - IAM roles
+
+Parameters:
+  Env:
+    Type: String
+    Default: dev
+
+Resources:
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub dq-lambda-role-${Env}
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: dq-lambda-s3-ddb-secrets
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:ListBucket
+                Resource: 
+                  - !Sub arn:aws:s3:::dq-landing-${AWS::AccountId}-${Env}
+                  - !Sub arn:aws:s3:::dq-landing-${AWS::AccountId}-${Env}/*
+              - Effect: Allow
+                Action:
+                  - dynamodb:PutItem
+                  - dynamodb:GetItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:Scan
+                Resource:
+                  - !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/dq_manifest_${Env}
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                Resource:
+                  - !ImportValue
+                      Fn::Sub: dq-config-secret-arn-${Env}
+
+  GlueJobRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub dq-glue-role-${Env}
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: glue.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSGlueServiceRole
+      Policies:
+        - PolicyName: dq-glue-s3-access
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:ListBucket
+                Resource:
+                  - !Sub arn:aws:s3:::dq-landing-${AWS::AccountId}-${Env}
+                  - !Sub arn:aws:s3:::dq-landing-${AWS::AccountId}-${Env}/*
+                  - !Sub arn:aws:s3:::dq-processed-${AWS::AccountId}-${Env}
+                  - !Sub arn:aws:s3:::dq-processed-${AWS::AccountId}-${Env}/*
+                  - !Sub arn:aws:s3:::dq-analytics-${AWS::AccountId}-${Env}
+                  - !Sub arn:aws:s3:::dq-analytics-${AWS::AccountId}-${Env}/*
+
+  StepFunctionsRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub dq-stepfunctions-role-${Env}
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: states.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: dq-stepfunctions-invoke
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - lambda:InvokeFunction
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - glue:StartJobRun
+                  - glue:GetJobRun
+                Resource: "*"
+
+Outputs:
+  LambdaExecutionRoleArn:
+    Value: !GetAtt LambdaExecutionRole.Arn
+    Export:
+      Name: !Sub dq-lambda-role-arn-${Env}
+  GlueJobRoleArn:
+    Value: !GetAtt GlueJobRole.Arn
+    Export:
+      Name: !Sub dq-glue-role-arn-${Env}
+  StepFunctionsRoleArn:
+    Value: !GetAtt StepFunctionsRole.Arn
+    Export:
+      Name: !Sub dq-stepfunctions-role-arn-${Env}

@@ -1,0 +1,42 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Data Quest - EventBridge schedule for Step Functions
+
+Parameters:
+  Env:
+    Type: String
+    Default: dev
+
+Resources:
+  DailyDQRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub dq-daily-rule-${Env}
+      ScheduleExpression: "cron(0 6 * * ? *)" # 1 AM ET approx
+      State: ENABLED
+      Targets:
+        - Id: dqStateMachine
+          Arn: !ImportValue
+            Fn::Sub: dq-state-machine-arn-${Env}
+          RoleArn: !GetAtt EventBridgeToSFRole.Arn
+
+  EventBridgeToSFRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub dq-eventbridge-to-sf-role-${Env}
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: dq-eventbridge-sf-invoke
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - states:StartExecution
+                Resource: !ImportValue
+                  Fn::Sub: dq-state-machine-arn-${Env}

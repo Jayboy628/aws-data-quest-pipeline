@@ -1,0 +1,26 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Data Quest - DynamoDB manifest table
+
+Parameters:
+  Env:
+    Type: String
+    Default: dev
+
+Resources:
+  ManifestTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub dq_manifest_${Env}
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: source_path
+          AttributeType: S
+      KeySchema:
+        - AttributeName: source_path
+          KeyType: HASH
+
+Outputs:
+  ManifestTableName:
+    Value: !Ref ManifestTable
+    Export:
+      Name: !Sub dq-manifest-table-${Env}
