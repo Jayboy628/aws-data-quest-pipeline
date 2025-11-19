@@ -11,50 +11,66 @@ Resources:
     Type: AWS::StepFunctions::StateMachine
     Properties:
       StateMachineName: !Sub dq-pipeline-${Env}
-      RoleArn: !ImportValue
-        Fn::Sub: dq-stepfunctions-role-arn-${Env}
+
+      # Import the Step Functions execution role created in 04_iam.yml
+      RoleArn:
+        Fn::ImportValue:
+          Fn::Sub: dq-stepfunctions-role-arn-${Env}
+
+      # DefinitionString must be a JSON string. We use Fn::Sub with a mapping
+      # to inject the Lambda ARNs and Glue job name.
       DefinitionString:
-        Fn::Sub: |
-          {
-            "Comment": "Data Quest daily pipeline",
-            "StartAt": "BlsSync",
-            "States": {
-              "BlsSync": {
-                "Type": "Task",
-                "Resource": "${dq-bls-sync-lambda-arn-${Env}}",
-                "Retry": [
-                  {
-                    "ErrorEquals": ["States.ALL"],
-                    "IntervalSeconds": 10,
-                    "MaxAttempts": 3,
-                    "BackoffRate": 2.0
-                  }
-                ],
-                "Next": "PopulationApi"
-              },
-              "PopulationApi": {
-                "Type": "Task",
-                "Resource": "${dq-population-lambda-arn-${Env}}",
-                "Retry": [
-                  {
-                    "ErrorEquals": ["States.ALL"],
-                    "IntervalSeconds": 10,
-                    "MaxAttempts": 3,
-                    "BackoffRate": 2.0
-                  }
-                ],
-                "Next": "AnalyticsGlue"
-              },
-              "AnalyticsGlue": {
-                "Type": "Task",
-                "Resource": "arn:aws:states:::glue:startJobRun.sync",
-                "Parameters": {
-                  "JobName": "${dq-analytics-glue-job-name-${Env}}"
+        Fn::Sub:
+          - |
+            {
+              "Comment": "Data Quest daily pipeline",
+              "StartAt": "BlsSync",
+              "States": {
+                "BlsSync": {
+                  "Type": "Task",
+                  "Resource": "${BlsLambdaArn}",
+                  "Retry": [
+                    {
+                      "ErrorEquals": ["States.ALL"],
+                      "IntervalSeconds": 10,
+                      "MaxAttempts": 3,
+                      "BackoffRate": 2.0
+                    }
+                  ],
+                  "Next": "PopulationApi"
                 },
-                "End": true
+                "PopulationApi": {
+                  "Type": "Task",
+                  "Resource": "${PopulationLambdaArn}",
+                  "Retry": [
+                    {
+                      "ErrorEquals": ["States.ALL"],
+                      "IntervalSeconds": 10,
+                      "MaxAttempts": 3,
+                      "BackoffRate": 2.0
+                    }
+                  ],
+                  "Next": "AnalyticsGlue"
+                },
+                "AnalyticsGlue": {
+                  "Type": "Task",
+                  "Resource": "arn:aws:states:::glue:startJobRun.sync",
+                  "Parameters": {
+                    "JobName": "${AnalyticsGlueJobName}"
+                  },
+                  "End": true
+                }
               }
             }
-          }
+          - BlsLambdaArn:
+              Fn::ImportValue:
+                Fn::Sub: dq-bls-sync-lambda-arn-${Env}
+            PopulationLambdaArn:
+              Fn::ImportValue:
+                Fn::Sub: dq-population-lambda-arn-${Env}
+            AnalyticsGlueJobName:
+              Fn::ImportValue:
+                Fn::Sub: dq-analytics-glue-job-name-${Env}
 
 Outputs:
   StateMachineArn:
