@@ -45,15 +45,22 @@ def get_bls_user_agent(secret_arn: str) -> str:
     return data.get("blsUserAgent", "DataQuest-DataQuestDemo/1.0")
 
 
+
+import re
+
 def list_bls_files(headers: dict) -> list[str]:
     """
     Fetch the directory listing and return BLS time-series filenames.
 
-    The HTML is a simple directory listing with lines like:
-        9/4/2025  7:30 AM      1564284 pr.data.0.Current
+    The HTML is a directory listing page that contains file references like:
+      pr.class
+      pr.data.0.Current
+      pr.data.1.AllData
+      pr.series
+    etc.
 
-    We parse each line, split on whitespace, and treat any token that starts
-    with 'pr.' as a filename.
+    We avoid trying to parse HTML structure and instead scan the entire
+    response text with a regex for tokens that look like 'pr.<something>'.
     """
     status, text = http_get(BLS_BASE_URL, headers=headers, timeout=30)
     if status == 403:
@@ -62,21 +69,16 @@ def list_bls_files(headers: dict) -> list[str]:
     if status != 200:
         raise Exception(f"BLS index returned HTTP {status}")
 
-    files: list[str] = []
-    for line in text.splitlines():
-        # Skip obvious non-data lines
-        line = line.strip()
-        if not line or line.startswith("#") or "To Parent Directory" in line:
-            continue
+    # Find all substrings that look like pr.<letters/digits/underscore/dot>
+    matches = re.findall(r"pr\.[A-Za-z0-9_.]+", text)
 
-        parts = line.split()
-        # Look for any token starting with 'pr.'
-        for token in parts:
-            if token.startswith("pr."):
-                files.append(token)
+    # Deduplicate & sort for stability
+    files = sorted(set(matches))
 
     logger.info(f"Found {len(files)} BLS files under {BLS_BASE_URL}: {files}")
     return files
+
+
 
 
 
