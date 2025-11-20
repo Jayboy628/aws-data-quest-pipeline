@@ -12,38 +12,58 @@ from pyspark.sql import functions as F
 from pyspark.sql.window import Window
 
 
+
+import re
+
 def get_latest_ingest_prefix(bucket: str, base_prefix: str) -> str:
     """
-    Return the latest ingest_dt=YYYY/MM/DD prefix under base_prefix.
-    Example base_prefix: 'landing/bls/pr/'
+    Return the latest ingest_dt=YYYY[/MM[/DD]] prefix under base_prefix by
+    scanning object keys (no Delimiter) and extracting the ingest_dt portion.
+
+    Example keys:
+      landing/bls/pr/ingest_dt=2025/11/20/pr.data.1.AllData
+      landing/population/ingest_dt=2025/11/20/population.json
     """
     s3 = boto3.client("s3")
 
-    # List all 'ingest_dt=' prefixes
+    # List all objects under base_prefix + 'ingest_dt='
+    prefix = base_prefix + "ingest_dt="
     resp = s3.list_objects_v2(
         Bucket=bucket,
-        Prefix=base_prefix,
-        Delimiter="/"
+        Prefix=prefix,
     )
 
-    prefixes = []
-    for cp in resp.get("CommonPrefixes", []):
-        p = cp["Prefix"]  # e.g. landing/bls/pr/ingest_dt=2025/11/20/
-        if "ingest_dt=" in p:
-            prefixes.append(p)
+    contents = resp.get("Contents", [])
+    if not contents:
+        raise RuntimeError(f"No objects found under s3://{bucket}/{prefix}")
 
-    if not prefixes:
-        raise RuntimeError(f"No ingest_dt prefixes found under s3://{bucket}/{base_prefix}")
+    candidates = []
 
-    # Extract the date part after 'ingest_dt=' and normalize to a sortable key
-    def parse_ingest(p):
-        # p like 'landing/bls/pr/ingest_dt=2025/11/20/'
-        part = p.split("ingest_dt=")[1].strip("/")
-        # '2025/11/20'
-        return datetime.strptime(part, "%Y/%m/%d")
+    for obj in contents:
+        key = obj["Key"]  # e.g. landing/population/ingest_dt=2025/11/20/population.json
 
-    latest_prefix = max(prefixes, key=parse_ingest)
-    return latest_prefix  # e.g. 'landing/bls/pr/ingest_dt=2025/11/20/'
+        m = re.search(r"ingest_dt=(\d{4})(?:/(\d{2}))?(?:/(\d{2}))?", key)
+        if not m:
+            continue
+
+        year = int(m.group(1))
+        month = int(m.group(2)) if m.group(2) else 1
+        day = int(m.group(3)) if m.group(3) else 1
+
+        dt = datetime(year, month, day)
+
+        # Normalize to a full ingest_dt=YYYY/MM/DD/ prefix
+        full_prefix = f"{base_prefix}ingest_dt={year:04d}/{month:02d}/{day:02d}/"
+        candidates.append((dt, full_prefix))
+
+    if not candidates:
+        raise RuntimeError(f"No ingest_dt patterns found under s3://{bucket}/{prefix}")
+
+    # Pick the latest date
+    latest_dt, latest_prefix = max(candidates, key=lambda x: x[0])
+    return latest_prefix
+
+
 
 
 def read_bls_time_series(spark, bucket: str, base_prefix: str):
