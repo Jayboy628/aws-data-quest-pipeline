@@ -45,11 +45,16 @@ def get_bls_user_agent(secret_arn: str) -> str:
     return data.get("blsUserAgent", "DataQuest-DataQuestDemo/1.0")
 
 
+
 def list_bls_files(headers: dict) -> list[str]:
     """
     Fetch the directory listing and return BLS time-series filenames.
 
-    BLS directory is an HTML index. We do a simple string parse for href="pr.*".
+    The HTML is a simple directory listing with lines like:
+        9/4/2025  7:30 AM      1564284 pr.data.0.Current
+
+    We parse each line, split on whitespace, and treat any token that starts
+    with 'pr.' as a filename.
     """
     status, text = http_get(BLS_BASE_URL, headers=headers, timeout=30)
     if status == 403:
@@ -60,15 +65,20 @@ def list_bls_files(headers: dict) -> list[str]:
 
     files: list[str] = []
     for line in text.splitlines():
-        if 'href="pr.' in line:
-            start = line.find('href="') + len('href="')
-            end = line.find('"', start)
-            name = line[start:end]
-            if name.startswith("pr."):
-                files.append(name)
+        # Skip obvious non-data lines
+        line = line.strip()
+        if not line or line.startswith("#") or "To Parent Directory" in line:
+            continue
 
-    logger.info(f"Found {len(files)} BLS files under {BLS_BASE_URL}")
+        parts = line.split()
+        # Look for any token starting with 'pr.'
+        for token in parts:
+            if token.startswith("pr."):
+                files.append(token)
+
+    logger.info(f"Found {len(files)} BLS files under {BLS_BASE_URL}: {files}")
     return files
+
 
 
 def download_file(filename: str, headers: dict) -> bytes:
