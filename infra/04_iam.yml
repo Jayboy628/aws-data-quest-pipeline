@@ -78,6 +78,14 @@ Resources:
                   - !Sub arn:aws:s3:::dq-processed-${AWS::AccountId}-${Env}/*
                   - !Sub arn:aws:s3:::dq-analytics-${AWS::AccountId}-${Env}
                   - !Sub arn:aws:s3:::dq-analytics-${AWS::AccountId}-${Env}/*
+              - Effect: Allow
+                  Action:
+                    - s3:ListBucket
+                    - s3:GetObject
+                  Resource:
+                    - !Sub arn:aws:s3:::dq-code-${AWS::AccountId}-${Env}
+                    - !Sub arn:aws:s3:::dq-code-${AWS::AccountId}-${Env}/*
+
 
   StepFunctionsRole:
     Type: AWS::IAM::Role
