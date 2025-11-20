@@ -45,7 +45,6 @@ def get_bls_user_agent(secret_arn: str) -> str:
     return data.get("blsUserAgent", "DataQuest-DataQuestDemo/1.0")
 
 
-
 def list_bls_files(headers: dict) -> list[str]:
     """
     Fetch the directory listing and return BLS time-series filenames.
