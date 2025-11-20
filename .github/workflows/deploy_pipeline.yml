@@ -1,0 +1,66 @@
+name: Deploy Data Quest Pipeline Code
+
+on:
+  push:
+    branches:
+      - feature/pipeline-logic   # run when you push to this branch
+  workflow_dispatch: {}          # allow manual runs
+
+jobs:
+  deploy-pipeline:
+    runs-on: ubuntu-latest
+
+    permissions:
+      id-token: write
+      contents: read
+
+    env:
+      CODE_BUCKET: dq-code-657082399901-dev
+      AWS_REGION: ${{ secrets.AWS_REGION }}
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Show AWS identity (debug)
+        run: aws sts get-caller-identity
+
+      - name: Zip Lambda functions
+        run: |
+          echo "Zipping BLS sync lambda..."
+          zip -j dq-bls-sync.zip src/ingestion/bls_sync_lambda/handler.py
+
+          echo "Zipping Population API lambda..."
+          zip -j dq-population-api.zip src/ingestion/population_api_lambda/handler.py
+
+      - name: Upload artifacts to code bucket
+        run: |
+          echo "Uploading lambda zips and Glue script to s3://${CODE_BUCKET}/"
+          aws s3 cp dq-bls-sync.zip s3://${CODE_BUCKET}/
+          aws s3 cp dq-population-api.zip s3://${CODE_BUCKET}/
+          aws s3 cp src/analytics/glue_job.py s3://${CODE_BUCKET}/
+
+      - name: Update Lambda functions with new code
+        run: |
+          echo "Updating Lambda code for dq-bls-sync-dev..."
+          aws lambda update-function-code \
+            --function-name dq-bls-sync-dev \
+            --s3-bucket ${CODE_BUCKET} \
+            --s3-key dq-bls-sync.zip
+
+          echo "Updating Lambda code for dq-population-api-dev..."
+          aws lambda update-function-code \
+            --function-name dq-population-api-dev \
+            --s3-bucket ${CODE_BUCKET} \
+            --s3-key dq-population-api.zip
+
+      # Optional: you can also (re)upload the Glue job and restart a job run if desired
+      - name: Log Glue script location (for visibility)
+        run: |
+          echo "Glue job script is at: s3://${CODE_BUCKET}/glue_job.py"
