@@ -2,9 +2,9 @@ import os
 import logging
 import json
 from datetime import datetime
+from urllib.request import Request, urlopen
 
 import boto3
-import requests
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -20,6 +20,15 @@ POP_URL = (
 )
 
 
+def http_get(url: str, timeout: int = 30) -> tuple[int, str]:
+    """Simple HTTP GET using urllib."""
+    req = Request(url)
+    with urlopen(req, timeout=timeout) as resp:
+        status = resp.status  # type: ignore[attr-defined]
+        text = resp.read().decode("utf-8", errors="replace")
+        return status, text
+
+
 def lambda_handler(event, context):
     env = os.getenv("ENV", "dev")
     landing_bucket = os.getenv("LANDING_BUCKET")
@@ -29,12 +38,12 @@ def lambda_handler(event, context):
 
     logger.info(f"Calling population API. ENV={env}, LANDING_BUCKET={landing_bucket}")
 
-    resp = requests.get(POP_URL, timeout=30)
-    resp.raise_for_status()
-    data = resp.json()
+    status, text = http_get(POP_URL, timeout=30)
+    if status != 200:
+        raise Exception(f"Population API returned HTTP {status}")
 
-    # Optional: validate structure has 'data' key or similar
-    # For now, just store the full JSON response.
+    data = json.loads(text)
+
     today = datetime.utcnow()
     ingest_prefix = f"landing/population/ingest_dt={today:%Y/%m/%d}/"
     key = ingest_prefix + "population.json"

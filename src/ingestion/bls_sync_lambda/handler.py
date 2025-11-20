@@ -1,19 +1,37 @@
 import os
 import logging
-import boto3
-import requests
+import json
 from datetime import datetime
 from urllib.parse import urljoin
+from urllib.request import Request, urlopen
+
+import boto3
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 BLS_BASE_URL = "https://download.bls.gov/pub/time.series/pr/"
 
-
 secrets_client = boto3.client("secretsmanager")
 s3 = boto3.client("s3")
-dynamodb = boto3.client("dynamodb")
+
+
+def http_get(url: str, headers: dict | None = None, timeout: int = 30) -> tuple[int, str]:
+    """Simple HTTP GET using stdlib urllib (no requests dependency)."""
+    req = Request(url, headers=headers or {})
+    with urlopen(req, timeout=timeout) as resp:
+        status = resp.status  # type: ignore[attr-defined]
+        text = resp.read().decode("utf-8", errors="replace")
+        return status, text
+
+
+def http_get_bytes(url: str, headers: dict | None = None, timeout: int = 60) -> tuple[int, bytes]:
+    """GET returning raw bytes (for file download)."""
+    req = Request(url, headers=headers or {})
+    with urlopen(req, timeout=timeout) as resp:
+        status = resp.status  # type: ignore[attr-defined]
+        data = resp.read()
+        return status, data
 
 
 def get_bls_user_agent(secret_arn: str) -> str:
@@ -23,71 +41,68 @@ def get_bls_user_agent(secret_arn: str) -> str:
       { "blsUserAgent": "DataQuest-dev (Email: you@example.com; Phone: ...)" }
     """
     resp = secrets_client.get_secret_value(SecretId=secret_arn)
-    secret_str = resp["SecretString"]
-    import json
-    data = json.loads(secret_str)
-    return data.get("blsUserAgent", "DataQuest-Unknown/1.0")
+    data = json.loads(resp["SecretString"])
+    return data.get("blsUserAgent", "DataQuest-DataQuestDemo/1.0")
 
 
 def list_bls_files(headers: dict) -> list[str]:
     """
-    Fetch the directory listing and return file names.
-    For the BLS time.series/pr/ directory, the content is a plain HTML index.
-    We'll do a simple parse: find links that look like 'pr.*'.
+    Fetch the directory listing and return BLS time-series filenames.
+
+    BLS directory is an HTML index. We do a simple string parse for href="pr.*".
     """
-    resp = requests.get(BLS_BASE_URL, headers=headers, timeout=30)
-    if resp.status_code == 403:
+    status, text = http_get(BLS_BASE_URL, headers=headers, timeout=30)
+    if status == 403:
         logger.error("Got 403 from BLS. Check User-Agent per BLS policy.")
         raise Exception("403 Forbidden from BLS")
-    resp.raise_for_status()
+    if status != 200:
+        raise Exception(f"BLS index returned HTTP {status}")
 
-    text = resp.text
-    files = []
+    files: list[str] = []
     for line in text.splitlines():
-        # crude but works for the simple directory index:
-        # look for href="pr.xxx"
         if 'href="pr.' in line:
-            # e.g. <a href="pr.data.0.Current">pr.data.0.Current</a>
             start = line.find('href="') + len('href="')
             end = line.find('"', start)
             name = line[start:end]
             if name.startswith("pr."):
                 files.append(name)
-    logger.info(f"Found {len(files)} candidate files: {files}")
+
+    logger.info(f"Found {len(files)} BLS files under {BLS_BASE_URL}")
     return files
 
 
 def download_file(filename: str, headers: dict) -> bytes:
     url = urljoin(BLS_BASE_URL, filename)
     logger.info(f"Downloading {url}")
-    resp = requests.get(url, headers=headers, timeout=60)
-    resp.raise_for_status()
-    return resp.content
+    status, data = http_get_bytes(url, headers=headers, timeout=60)
+    if status != 200:
+        raise Exception(f"Download of {filename} failed with HTTP {status}")
+    return data
 
 
 def lambda_handler(event, context):
     env = os.getenv("ENV", "dev")
     landing_bucket = os.getenv("LANDING_BUCKET")
-    manifest_table = os.getenv("MANIFEST_TABLE")   # not used yet in phase 1
     config_secret_arn = os.getenv("CONFIG_SECRET_ARN")
 
     if not landing_bucket:
         raise RuntimeError("LANDING_BUCKET env var not set")
+    if not config_secret_arn:
+        raise RuntimeError("CONFIG_SECRET_ARN env var not set")
 
     logger.info(f"Starting BLS sync. ENV={env}, landing_bucket={landing_bucket}")
 
     user_agent = get_bls_user_agent(config_secret_arn)
     headers = {"User-Agent": user_agent}
 
-    # 1) List files in BLS directory
+    # 1) List files
     files = list_bls_files(headers)
 
-    # 2) For now: download ALL files each run and write to ingest_dt path.
-    #    (You will later optimize using DynamoDB manifest to skip unchanged files.)
+    # 2) Download & upload to landing/bls/pr/ingest_dt=YYYY/MM/DD/
     today = datetime.utcnow()
     ingest_prefix = f"landing/bls/pr/ingest_dt={today:%Y/%m/%d}/"
+    uploaded: list[str] = []
 
-    uploaded = []
     for fname in files:
         content = download_file(fname, headers=headers)
         key = ingest_prefix + fname
