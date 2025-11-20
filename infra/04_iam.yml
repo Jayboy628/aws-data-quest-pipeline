@@ -48,6 +48,7 @@ Resources:
                   - !ImportValue
                       Fn::Sub: dq-config-secret-arn-${Env}
 
+
   GlueJobRole:
     Type: AWS::IAM::Role
     Properties:
@@ -66,6 +67,7 @@ Resources:
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
+              # Existing data buckets (landing, processed, analytics)
               - Effect: Allow
                 Action:
                   - s3:GetObject
@@ -78,13 +80,15 @@ Resources:
                   - !Sub arn:aws:s3:::dq-processed-${AWS::AccountId}-${Env}/*
                   - !Sub arn:aws:s3:::dq-analytics-${AWS::AccountId}-${Env}
                   - !Sub arn:aws:s3:::dq-analytics-${AWS::AccountId}-${Env}/*
+
+              # NEW: allow Glue to read the code bucket where glue_job.py lives
               - Effect: Allow
-                  Action:
-                    - s3:ListBucket
-                    - s3:GetObject
-                  Resource:
-                    - !Sub arn:aws:s3:::dq-code-${AWS::AccountId}-${Env}
-                    - !Sub arn:aws:s3:::dq-code-${AWS::AccountId}-${Env}/*
+                Action:
+                  - s3:ListBucket
+                  - s3:GetObject
+                Resource:
+                  - !Sub arn:aws:s3:::dq-code-${AWS::AccountId}-${Env}
+                  - !Sub arn:aws:s3:::dq-code-${AWS::AccountId}-${Env}/*
 
 
   StepFunctionsRole:
