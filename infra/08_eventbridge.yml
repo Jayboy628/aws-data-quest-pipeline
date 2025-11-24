@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: Data Quest - EventBridge schedule for Step Functions
+Description: Data Quest - EventBridge schedule for Step Functions + SNS + SQS
 
 Parameters:
   Env:
@@ -7,11 +7,15 @@ Parameters:
     Default: dev
 
 Resources:
+
+  ###############################################
+  # EventBridge Daily Schedule → Step Functions
+  ###############################################
   DailyDQRule:
     Type: AWS::Events::Rule
     Properties:
       Name: !Sub dq-daily-rule-${Env}
-      ScheduleExpression: "cron(0 6 * * ? *)" # 1 AM ET approx
+      ScheduleExpression: "cron(0 6 * * ? *)"   # 1 AM ET approx
       State: ENABLED
       Targets:
         - Id: dqStateMachine
@@ -40,3 +44,66 @@ Resources:
                   - states:StartExecution
                 Resource: !ImportValue
                   Fn::Sub: dq-state-machine-arn-${Env}
+
+  ###############################################
+  # SNS Topic for Pipeline Alerts
+  ###############################################
+  PipelineAlertsTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub dq-pipeline-alerts-${Env}
+      DisplayName: !Sub "Data Quest Pipeline Alerts (${Env})"
+
+  ###############################################
+  # SQS Queue + DLQ (Dead-Letter Queue)
+  ###############################################
+
+  PipelineDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub dq-pipeline-queue-dlq-${Env}
+      MessageRetentionPeriod: 1209600   # 14 days
+
+  PipelineQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub dq-pipeline-queue-${Env}
+      VisibilityTimeout: 300      # 5 minutes
+      MessageRetentionPeriod: 345600  # 4 days
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt PipelineDLQ.Arn
+        maxReceiveCount: 3
+
+  ###############################################
+  # Outputs
+  ###############################################
+Outputs:
+  PipelineAlertsTopicArn:
+    Description: SNS Topic for pipeline notifications
+    Value: !Ref PipelineAlertsTopic
+    Export:
+      Name: !Sub dq-pipeline-alerts-arn-${Env}
+
+  PipelineQueueUrl:
+    Description: Main SQS queue URL
+    Value: !Ref PipelineQueue
+    Export:
+      Name: !Sub dq-pipeline-queue-url-${Env}
+
+  PipelineQueueArn:
+    Description: Main SQS queue ARN
+    Value: !GetAtt PipelineQueue.Arn
+    Export:
+      Name: !Sub dq-pipeline-queue-arn-${Env}
+
+  PipelineDLQUrl:
+    Description: DLQ queue URL
+    Value: !Ref PipelineDLQ
+    Export:
+      Name: !Sub dq-pipeline-dlq-url-${Env}
+
+  PipelineDLQArn:
+    Description: DLQ queue ARN
+    Value: !GetAtt PipelineDLQ.Arn
+    Export:
+      Name: !Sub dq-pipeline-dlq-arn-${Env}
