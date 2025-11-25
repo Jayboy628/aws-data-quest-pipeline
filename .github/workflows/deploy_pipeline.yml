@@ -3,7 +3,7 @@ name: Deploy Data Quest Pipeline Code
 on:
   push:
     branches:
-      - feature/pipeline-logic   # run when you push to this branch
+      - feature/update-pipeline-logic   # run when you push to this branch
   workflow_dispatch: {}          # allow manual runs
 
 jobs:
