@@ -1,46 +1,108 @@
 name: Destroy Data Quest Infra
 
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      env:
+        description: "Environment name (dev, prod, etc.)"
+        required: true
+        default: "dev"
 
 jobs:
   destroy:
     runs-on: ubuntu-latest
+
     permissions:
       id-token: write
       contents: read
 
     env:
       AWS_REGION: ${{ secrets.AWS_REGION }}
-      ENV: dev
       ACCOUNT_ID: "657082399901"
 
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
 
+      # ✅ Recommended: OIDC
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Empty S3 buckets
+      - name: Show AWS identity (debug)
         run: |
-          aws s3 rm s3://dq-landing-${ACCOUNT_ID}-${ENV} --recursive || true
-          aws s3 rm s3://dq-processed-${ACCOUNT_ID}-${ENV} --recursive || true
-          aws s3 rm s3://dq-analytics-${ACCOUNT_ID}-${ENV} --recursive || true
-          aws s3 rm s3://dq-code-${ACCOUNT_ID}-${ENV} --recursive || true
+          aws sts get-caller-identity
+          aws configure list
 
-      - name: Delete CloudFormation stacks (reverse order)
+      - name: Set variables
         run: |
-          STACK_PREFIX="dq-${ENV}"
-          aws cloudformation delete-stack --stack-name "${STACK_PREFIX}-eventbridge"
-          aws cloudformation delete-stack --stack-name "${STACK_PREFIX}-stepfunctions"
-          aws cloudformation delete-stack --stack-name "${STACK_PREFIX}-glue"
-          aws cloudformation delete-stack --stack-name "${STACK_PREFIX}-lambda"
-          aws cloudformation delete-stack --stack-name "${STACK_PREFIX}-iam"
-          aws cloudformation delete-stack --stack-name "${STACK_PREFIX}-secrets"
-          aws cloudformation delete-stack --stack-name "${STACK_PREFIX}-dynamodb"
-          aws cloudformation delete-stack --stack-name "${STACK_PREFIX}-s3"
+          echo "ENV=${{ inputs.env }}" >> $GITHUB_ENV
+          echo "STACK_PREFIX=dq-${{ inputs.env }}" >> $GITHUB_ENV
+          echo "LANDING_BUCKET=dq-landing-${ACCOUNT_ID}-${{ inputs.env }}" >> $GITHUB_ENV
+          echo "PROCESSED_BUCKET=dq-processed-${ACCOUNT_ID}-${{ inputs.env }}" >> $GITHUB_ENV
+          echo "ANALYTICS_BUCKET=dq-analytics-${ACCOUNT_ID}-${{ inputs.env }}" >> $GITHUB_ENV
+          echo "CODE_BUCKET=dq-code-${ACCOUNT_ID}-${{ inputs.env }}" >> $GITHUB_ENV
 
+      - name: List Data Quest stacks (debug)
+        run: |
+          echo "Looking for stacks starting with: ${STACK_PREFIX}"
+          aws cloudformation list-stacks \
+            --stack-status-filter CREATE_COMPLETE UPDATE_COMPLETE UPDATE_ROLLBACK_COMPLETE ROLLBACK_COMPLETE \
+            --query "StackSummaries[?starts_with(StackName, \`${STACK_PREFIX}\`)].{Name:StackName,Status:StackStatus}" \
+            --output table
+
+      - name: Empty S3 buckets (required before deleting S3 stack)
+        run: |
+          set -e
+          for b in "$LANDING_BUCKET" "$PROCESSED_BUCKET" "$ANALYTICS_BUCKET" "$CODE_BUCKET"; do
+            echo "Emptying bucket: $b"
+            aws s3 rm "s3://$b" --recursive || true
+          done
+
+      - name: Delete CloudFormation stacks (reverse dependency order)
+        run: |
+          set -e
+          # Reverse order: eventbridge -> stepfunctions -> glue -> lambda -> iam -> secrets -> dynamodb -> s3
+          stacks=(
+            "${STACK_PREFIX}-eventbridge"
+            "${STACK_PREFIX}-stepfunctions"
+            "${STACK_PREFIX}-glue"
+            "${STACK_PREFIX}-lambda"
+            "${STACK_PREFIX}-iam"
+            "${STACK_PREFIX}-secrets"
+            "${STACK_PREFIX}-dynamodb"
+            "${STACK_PREFIX}-s3"
+          )
+
+          for s in "${stacks[@]}"; do
+            echo "Requesting delete for stack: $s"
+            aws cloudformation delete-stack --stack-name "$s" || true
+          done
+
+      - name: Wait for stacks to delete + show final status
+        run: |
+          set +e
+          stacks=(
+            "${STACK_PREFIX}-eventbridge"
+            "${STACK_PREFIX}-stepfunctions"
+            "${STACK_PREFIX}-glue"
+            "${STACK_PREFIX}-lambda"
+            "${STACK_PREFIX}-iam"
+            "${STACK_PREFIX}-secrets"
+            "${STACK_PREFIX}-dynamodb"
+            "${STACK_PREFIX}-s3"
+          )
+
+          for s in "${stacks[@]}"; do
+            echo "Waiting for delete: $s"
+            aws cloudformation wait stack-delete-complete --stack-name "$s"
+            rc=$?
+            if [ $rc -ne 0 ]; then
+              echo "❌ Delete failed or timed out for $s. Showing stack events:"
+              aws cloudformation describe-stack-events --stack-name "$s" --max-items 15 || true
+            else
+              echo "✅ Deleted $s"
+            fi
+          done
