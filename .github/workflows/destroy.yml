@@ -36,6 +36,14 @@ jobs:
           aws sts get-caller-identity
           aws configure list
 
+      - name: List DQ stacks
+        run: |
+          aws cloudformation list-stacks \
+            --stack-status-filter CREATE_COMPLETE UPDATE_COMPLETE UPDATE_ROLLBACK_COMPLETE ROLLBACK_COMPLETE \
+            --query "StackSummaries[?starts_with(StackName, 'dq-dev')].[StackName,StackStatus]" \
+            --output table
+
+
       - name: Set variables
         run: |
           echo "ENV=${{ inputs.env }}" >> $GITHUB_ENV
