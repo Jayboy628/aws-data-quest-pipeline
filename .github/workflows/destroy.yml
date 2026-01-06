@@ -1,0 +1,46 @@
+name: Destroy Data Quest Infra
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  destroy:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+
+    env:
+      AWS_REGION: ${{ secrets.AWS_REGION }}
+      ENV: dev
+      ACCOUNT_ID: "657082399901"
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Empty S3 buckets
+        run: |
+          aws s3 rm s3://dq-landing-${ACCOUNT_ID}-${ENV} --recursive || true
+          aws s3 rm s3://dq-processed-${ACCOUNT_ID}-${ENV} --recursive || true
+          aws s3 rm s3://dq-analytics-${ACCOUNT_ID}-${ENV} --recursive || true
+          aws s3 rm s3://dq-code-${ACCOUNT_ID}-${ENV} --recursive || true
+
+      - name: Delete CloudFormation stacks (reverse order)
+        run: |
+          STACK_PREFIX="dq-${ENV}"
+          aws cloudformation delete-stack --stack-name "${STACK_PREFIX}-eventbridge"
+          aws cloudformation delete-stack --stack-name "${STACK_PREFIX}-stepfunctions"
+          aws cloudformation delete-stack --stack-name "${STACK_PREFIX}-glue"
+          aws cloudformation delete-stack --stack-name "${STACK_PREFIX}-lambda"
+          aws cloudformation delete-stack --stack-name "${STACK_PREFIX}-iam"
+          aws cloudformation delete-stack --stack-name "${STACK_PREFIX}-secrets"
+          aws cloudformation delete-stack --stack-name "${STACK_PREFIX}-dynamodb"
+          aws cloudformation delete-stack --stack-name "${STACK_PREFIX}-s3"
+
