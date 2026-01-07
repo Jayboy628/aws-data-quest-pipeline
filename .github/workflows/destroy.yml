@@ -81,9 +81,29 @@ jobs:
           done
           set -e
 
-      - name: Delete CloudFormation stacks (reverse dependency order)
+      # - name: Delete CloudFormation stacks (reverse dependency order)
+      #   run: |
+      #     set -e
+      #     stacks=(
+      #       "${STACK_PREFIX}-eventbridge"
+      #       "${STACK_PREFIX}-stepfunctions"
+      #       "${STACK_PREFIX}-glue"
+      #       "${STACK_PREFIX}-lambda"
+      #       "${STACK_PREFIX}-iam"
+      #       "${STACK_PREFIX}-secrets"
+      #       "${STACK_PREFIX}-dynamodb"
+      #       "${STACK_PREFIX}-s3"
+      #     )
+
+      #     for s in "${stacks[@]}"; do
+      #       echo "Requesting delete for stack: $s"
+      #       aws cloudformation delete-stack --stack-name "$s" || true
+      #     done
+
+      - name: Delete stacks one-by-one (dependency-safe)
         run: |
-          set -e
+          set +e
+
           stacks=(
             "${STACK_PREFIX}-eventbridge"
             "${STACK_PREFIX}-stepfunctions"
@@ -96,9 +116,38 @@ jobs:
           )
 
           for s in "${stacks[@]}"; do
-            echo "Requesting delete for stack: $s"
-            aws cloudformation delete-stack --stack-name "$s" || true
+            echo "=============================="
+            echo "Deleting stack: $s"
+            echo "=============================="
+
+            # If stack doesn't exist, skip
+            aws cloudformation describe-stacks --stack-name "$s" >/dev/null 2>&1
+            if [ $? -ne 0 ]; then
+              echo "ℹ️ Stack not found: $s (skipping)"
+              continue
+            fi
+
+            # Request delete
+            aws cloudformation delete-stack --stack-name "$s"
+            if [ $? -ne 0 ]; then
+              echo "❌ Failed to request delete for $s"
+              aws cloudformation describe-stack-events --stack-name "$s" --max-items 25 || true
+              exit 1
+            fi
+
+            echo "⏳ Waiting for delete to complete: $s"
+            aws cloudformation wait stack-delete-complete --stack-name "$s"
+            rc=$?
+
+            if [ $rc -ne 0 ]; then
+              echo "❌ Delete failed/timed out for $s. Recent events:"
+              aws cloudformation describe-stack-events --stack-name "$s" --max-items 25 || true
+              exit 1
+            else
+              echo "✅ Deleted: $s"
+            fi
           done
+
 
       - name: Wait for stacks to delete + show final status
         run: |
