@@ -7,7 +7,6 @@ on:
         description: "Environment name (dev, prod, etc.)"
         required: true
         default: "dev"
-
 jobs:
   destroy:
     runs-on: ubuntu-latest
@@ -123,6 +122,6 @@ jobs:
               echo "❌ Delete failed or timed out for $s. Showing stack events:"
               aws cloudformation describe-stack-events --stack-name "$s" --max-items 25 || true
             else
-              echo "✅ Deleted $s"
+              echo "✅ -Deleted $s"
             fi
           done
