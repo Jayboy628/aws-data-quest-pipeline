@@ -1,12 +1,18 @@
 name: Destroy Data Quest Infra
 
+# on:
+#   workflow_dispatch:
+#     inputs:
+#       env:
+#         description: "Environment name (dev, prod, etc.)"
+#         required: true
+#         default: "dev"
+
 on:
-  workflow_dispatch:
-    inputs:
-      env:
-        description: "Environment name (dev, prod, etc.)"
-        required: true
-        default: "dev"
+  push:
+    branches:
+      - branch-safe
+  workflow_dispatch: {}
 
 jobs:
   destroy:
@@ -23,13 +29,6 @@ jobs:
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
-
-      # ✅ Recommended: OIDC
-      # - name: Configure AWS credentials (OIDC)
-      #   uses: aws-actions/configure-aws-credentials@v4
-      #   with:
-      #     role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
-      #     aws-region: ${{ secrets.AWS_REGION }}
 
       - name: Configure AWS credentials (long-lived keys)
         uses: aws-actions/configure-aws-credentials@v4

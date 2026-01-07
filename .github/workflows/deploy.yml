@@ -1,9 +1,9 @@
 name: Deploy Data Quest Infra
 
 on:
-  # push:
-  #   branches:
-  #     - main
+  push:
+    branches:
+      - feature/pipeline-logic
   workflow_dispatch: {}
 
 jobs:
