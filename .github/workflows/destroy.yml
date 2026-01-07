@@ -1,18 +1,12 @@
 name: Destroy Data Quest Infra
 
-# on:
-#   workflow_dispatch:
-#     inputs:
-#       env:
-#         description: "Environment name (dev, prod, etc.)"
-#         required: true
-#         default: "dev"
-
 on:
-  push:
-    branches:
-      - branch-safe
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      env:
+        description: "Environment name (dev, prod, etc.)"
+        required: true
+        default: "dev"
 
 jobs:
   destroy:
@@ -37,49 +31,60 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-
       - name: Show AWS identity (debug)
         run: |
           aws sts get-caller-identity
           aws configure list
 
-      - name: List DQ stacks
+      - name: List DQ stacks (debug)
         run: |
           aws cloudformation list-stacks \
             --stack-status-filter CREATE_COMPLETE UPDATE_COMPLETE UPDATE_ROLLBACK_COMPLETE ROLLBACK_COMPLETE \
             --query "StackSummaries[?starts_with(StackName, 'dq-dev')].[StackName,StackStatus]" \
             --output table
 
-
       - name: Set variables
         run: |
-          echo "ENV=${{ inputs.env }}" >> $GITHUB_ENV
-          echo "STACK_PREFIX=dq-${{ inputs.env }}" >> $GITHUB_ENV
-          echo "LANDING_BUCKET=dq-landing-${ACCOUNT_ID}-${{ inputs.env }}" >> $GITHUB_ENV
-          echo "PROCESSED_BUCKET=dq-processed-${ACCOUNT_ID}-${{ inputs.env }}" >> $GITHUB_ENV
-          echo "ANALYTICS_BUCKET=dq-analytics-${ACCOUNT_ID}-${{ inputs.env }}" >> $GITHUB_ENV
-          echo "CODE_BUCKET=dq-code-${ACCOUNT_ID}-${{ inputs.env }}" >> $GITHUB_ENV
+          ENV="${{ inputs.env }}"
+          echo "ENV=${ENV}" >> $GITHUB_ENV
+          echo "STACK_PREFIX=dq-${ENV}" >> $GITHUB_ENV
+          echo "LANDING_BUCKET=dq-landing-${ACCOUNT_ID}-${ENV}" >> $GITHUB_ENV
+          echo "PROCESSED_BUCKET=dq-processed-${ACCOUNT_ID}-${ENV}" >> $GITHUB_ENV
+          echo "ANALYTICS_BUCKET=dq-analytics-${ACCOUNT_ID}-${ENV}" >> $GITHUB_ENV
+          echo "CODE_BUCKET=dq-code-${ACCOUNT_ID}-${ENV}" >> $GITHUB_ENV
 
-      - name: List Data Quest stacks (debug)
+      - name: Echo computed names (debug)
+        run: |
+          echo "ENV=${ENV}"
+          echo "STACK_PREFIX=${STACK_PREFIX}"
+          echo "LANDING_BUCKET=${LANDING_BUCKET}"
+          echo "PROCESSED_BUCKET=${PROCESSED_BUCKET}"
+          echo "ANALYTICS_BUCKET=${ANALYTICS_BUCKET}"
+          echo "CODE_BUCKET=${CODE_BUCKET}"
+
+      - name: List Data Quest stacks by prefix (debug)
         run: |
           echo "Looking for stacks starting with: ${STACK_PREFIX}"
           aws cloudformation list-stacks \
             --stack-status-filter CREATE_COMPLETE UPDATE_COMPLETE UPDATE_ROLLBACK_COMPLETE ROLLBACK_COMPLETE \
-            --query "StackSummaries[?starts_with(StackName, \`${STACK_PREFIX}\`)].{Name:StackName,Status:StackStatus}" \
+            --query "StackSummaries[?starts_with(StackName, '${STACK_PREFIX}')].[StackName,StackStatus]" \
             --output table
 
       - name: Empty S3 buckets (required before deleting S3 stack)
         run: |
-          set -e
+          set +e
           for b in "$LANDING_BUCKET" "$PROCESSED_BUCKET" "$ANALYTICS_BUCKET" "$CODE_BUCKET"; do
             echo "Emptying bucket: $b"
-            aws s3 rm "s3://$b" --recursive || true
+            aws s3 rm "s3://$b" --recursive
+            if [ $? -ne 0 ]; then
+              echo "WARN: Could not empty bucket $b (may not exist or access denied)"
+            fi
           done
+          set -e
 
       - name: Delete CloudFormation stacks (reverse dependency order)
         run: |
           set -e
-          # Reverse order: eventbridge -> stepfunctions -> glue -> lambda -> iam -> secrets -> dynamodb -> s3
           stacks=(
             "${STACK_PREFIX}-eventbridge"
             "${STACK_PREFIX}-stepfunctions"
@@ -116,7 +121,7 @@ jobs:
             rc=$?
             if [ $rc -ne 0 ]; then
               echo "❌ Delete failed or timed out for $s. Showing stack events:"
-              aws cloudformation describe-stack-events --stack-name "$s" --max-items 15 || true
+              aws cloudformation describe-stack-events --stack-name "$s" --max-items 25 || true
             else
               echo "✅ Deleted $s"
             fi
